@@ -4,13 +4,34 @@ from ttkbootstrap.widgets.scrolled import ScrolledText
 from tkinter import filedialog, messagebox
 import json
 import os
+import sys
 import subprocess
 import threading
 import webbrowser
 import glob
 import winreg
 
-CONFIG_FILE = "config.json"
+def get_resource_path(relative_path):
+    """获取资源文件路径，兼容开发环境和 PyInstaller 打包环境"""
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller 打包后的临时目录
+        return os.path.join(sys._MEIPASS, relative_path)
+    # 开发环境
+    return os.path.join(os.path.abspath("."), relative_path)
+
+
+def get_config_path():
+    """获取配置文件路径，优先使用 exe 所在目录（支持持久化读写）"""
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller 单文件模式：exe 所在目录
+        exe_dir = os.path.dirname(sys.executable)
+        return os.path.join(exe_dir, "config.json")
+    # 开发环境：当前工作目录
+    return os.path.join(os.path.abspath("."), "config.json")
+
+
+CONFIG_FILE = get_config_path()
+ICON_PATH = get_resource_path("ico/logo.ico")
 
 DEFAULT_CONFIG = {
     "LlamaPath": "",
@@ -494,7 +515,8 @@ def main():
 
     root = ttk.Window(themename=theme_name)
     try:
-        root.iconbitmap("ico/logo.ico")
+        if os.path.exists(ICON_PATH):
+            root.iconbitmap(ICON_PATH)
     except Exception:
         pass
     app = LauncherApp(root)
