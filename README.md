@@ -66,8 +66,8 @@ python -m venv .venv
 
 ```json
 {
-    "LlamaPath": "C:/llama-win-cuda-13.1-x64",
-    "ModelPath": "D:/LargeLanguage Model",
+    "LlamaPath": "",
+    "ModelPath": "",
     "ThemeMode": "auto"
 }
 ```
@@ -88,6 +88,10 @@ python -m venv .venv
 ```
 
 打包后的可执行文件位于 `dist/main.exe`。
+
+另：作者自行编译了一份exe，可以前往`Releases`页面下载
+或[点击前往](https://github.com/Royapagee/EZ-llama-launcher/releases)
+
 
 ## 许可证
 
