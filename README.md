@@ -19,8 +19,7 @@ EZ-llama-launcher/
 ├── config.json          # 配置文件（自动创建）
 ├── requirements.txt     # Python 依赖
 ├── ico/
-│   ├── logo.ico         # 窗口图标
-│   └── logo.png         # 图标源文件
+│   └── logo.ico         # 图标
 ├── LICENSE
 └── README.md
 ```
