@@ -1,0 +1,7 @@
+/dist/
+/build/
+/__pycache__/
+/main.spec
+/cpp/
+/EZ-llama-launcher.spec
+/.vscode/

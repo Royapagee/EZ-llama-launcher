@@ -1,32 +1,32 @@
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap.widgets.scrolled import ScrolledText
+from ttkbootstrap.widgets import ToolTip
 from tkinter import filedialog, messagebox
+import tkinter as tk
 import json
 import os
 import sys
 import subprocess
 import threading
+import queue
 import webbrowser
-import glob
 import winreg
+from pathlib import Path
+
 
 def get_resource_path(relative_path):
     """获取资源文件路径，兼容开发环境和 PyInstaller 打包环境"""
     if hasattr(sys, '_MEIPASS'):
-        # PyInstaller 打包后的临时目录
         return os.path.join(sys._MEIPASS, relative_path)
-    # 开发环境
     return os.path.join(os.path.abspath("."), relative_path)
 
 
 def get_config_path():
     """获取配置文件路径，优先使用 exe 所在目录（支持持久化读写）"""
     if hasattr(sys, '_MEIPASS'):
-        # PyInstaller 单文件模式：exe 所在目录
         exe_dir = os.path.dirname(sys.executable)
         return os.path.join(exe_dir, "config.json")
-    # 开发环境：当前工作目录
     return os.path.join(os.path.abspath("."), "config.json")
 
 
@@ -36,7 +36,8 @@ ICON_PATH = get_resource_path("ico/logo.ico")
 DEFAULT_CONFIG = {
     "LlamaPath": "",
     "ModelPath": "",
-    "ThemeMode": "auto"
+    "ThemeMode": "auto",
+    "Params": {}
 }
 
 THEME_MAP = {
@@ -45,11 +46,79 @@ THEME_MAP = {
 }
 
 LOG_COLORS = {
-    "dark": {"bg": "#1e1e1e", "fg": "#d4d4d4"},
+    "dark": {"bg": "#1e1e1e", "fg": "#eeeeee"},
     "light": {"bg": "#f8f9fa", "fg": "#212529"}
 }
 
 TARGET_URL = "http://127.0.0.1:8080"
+
+PARAM_GROUPS = [
+    ("模型加载参数", [
+        ("model", "-m", "本地 GGUF 模型文件路径（覆盖下方下拉选择）"),
+        ("hf", "-hf", "Hugging Face Hub 模型（格式：用户/仓库:量化标签）"),
+        ("model_url", "-mu", "远程 URL 加载模型"),
+        ("alias", "--alias", "模型别名"),
+    ]),
+    ("网络与服务参数", [
+        ("host", "--host", "监听地址（默认 127.0.0.1；0.0.0.0 允许所有网访问）"),
+        ("port", "--port", "监听端口（默认 8080）"),
+        ("api_key", "--api-key", "API Key（请求需携带 Authorization: Bearer <key>）"),
+        ("timeout", "--timeout", "读写超时时间（秒）"),
+        ("metrics", "--metrics", "启用 /metrics 端点（输入任意值启用）"),
+    ]),
+    ("性能与硬件参数", [
+        ("ngl", "-ngl", "GPU 层数（99 通常可将所有层放入 GPU）"),
+        ("ctx_size", "-c", "上下文窗口大小（token 数）"),
+        ("parallel", "-np", "并行请求槽位数"),
+        ("threads", "-t", "CPU 推理线程数"),
+        ("batch_size", "-b", "批处理大小"),
+        ("ubatch_size", "-ub", "微批次大小"),
+        ("flash_attn", "-fa", "启用 Flash Attention（输入任意值启用）"),
+        ("cache_prompt", "--cache-prompt", "启用 prompt 缓存（输入任意值启用）"),
+        ("cache_reuse", "--cache-reuse", "缓存复用的 token 数量"),
+        ("cache_type_k", "-ctk", "Key 缓存量化类型（q4_0 / q8_0 / f16）"),
+        ("cache_type_v", "-ctv", "Value 缓存量化类型"),
+        ("no_mmap", "--no-mmap", "禁用内存映射（输入任意值启用）"),
+        ("split_mode", "--split-mode", "多卡切分模式（none / layer / row）"),
+        ("tensor_split", "--tensor-split", "多卡显存分配比例（如 7,8）"),
+    ]),
+    ("采样与生成参数", [
+        ("temp", "--temp", "温度（0=确定性，越高越随机；默认 0.8）"),
+        ("top_k", "--top-k", "Top-K 采样（默认 40）"),
+        ("top_p", "--top-p", "Top-P 核采样（默认 1.0）"),
+        ("min_p", "--min-p", "最小概率阈值（默认 0.0）"),
+        ("repeat_penalty", "--repeat-penalty", "重复惩罚系数（默认 1.0）"),
+        ("presence_penalty", "--presence-penalty", "存在惩罚（默认 0.0）"),
+        ("predict", "-n", "最大生成 token 数（默认 -1）"),
+        ("seed", "--seed", "随机种子（默认 -1）"),
+    ]),
+    ("模板与格式化参数", [
+        ("jinja", "--jinja", "使用 Jinja 模板引擎（输入即启用）"),
+        ("chat_template", "--chat-template", "聊天模板（llama3 / chatml / llama2）"),
+        ("chat_template_kwargs", "--chat-template-kwargs", "模板额外参数（JSON 格式）"),
+    ]),
+    ("多模型 Router 模式参数", [
+        ("models_dir", "--models-dir", "本地 GGUF 模型目录（不指定 -m 时进入 Router 模式）"),
+        ("models_max", "--models-max", "同时驻留内存的最大模型数"),
+        ("models_preset", "--models-preset", "预设配置文件路径（.ini）"),
+        ("cache_list", "-cl", "列出缓存中的模型（输入任意值启用）"),
+    ]),
+    ("日志与调试参数", [
+        ("verbose", "-v", "启用详细日志（输入任意值启用）"),
+        ("log_verbosity", "-lv", "日志详细级别（0-4）"),
+        ("log_timestamps", "--log-timestamps", "日志输出时间戳（输入任意值启用）"),
+        ("log_colors", "--log-colors", "日志着色（auto / on / off）"),
+        ("props", "--props", "启用 /props 端点（输入任意值启用）"),
+    ]),
+]
+
+FLAG_PARAMS = {
+    "metrics", "flash_attn", "cache_prompt", "no_mmap", "jinja",
+    "cache_list", "verbose", "log_timestamps", "props"
+}
+
+# 模块级模型扫描缓存: {path: (mtime, files_list)}
+_MODEL_SCAN_CACHE = {}
 
 
 def load_config():
@@ -58,10 +127,11 @@ def load_config():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 config = json.load(f)
-                # 补全缺失字段
                 for key, value in DEFAULT_CONFIG.items():
                     if key not in config:
                         config[key] = value
+                if not isinstance(config.get("Params"), dict):
+                    config["Params"] = {}
                 return config
         except Exception as e:
             messagebox.showerror("配置错误", f"读取配置文件失败: {e}")
@@ -100,17 +170,38 @@ def resolve_theme_mode(config):
 
 
 def get_model_files(path):
-    """获取指定路径下的模型文件列表"""
+    """
+    获取指定路径下的模型文件列表。
+    使用 os.scandir 单次递归扫描替代多次 rglob，并基于目录修改时间缓存结果。
+    """
     if not path or not os.path.isdir(path):
         return []
-    extensions = ("*.gguf", "*.bin", "*.safetensors", "*.pt", "*.pth", "*.ckpt")
+
+    abs_path = os.path.abspath(path)
+    try:
+        current_mtime = os.path.getmtime(abs_path)
+    except OSError:
+        current_mtime = 0
+
+    # 检查缓存是否有效
+    cached = _MODEL_SCAN_CACHE.get(abs_path)
+    if cached is not None:
+        cached_mtime, cached_files = cached
+        if current_mtime == cached_mtime:
+            return cached_files
+
+    # 单次扫描所有目标扩展名
+    extensions = (".gguf", ".bin", ".safetensors", ".pt", ".pth", ".ckpt")
     files = []
-    for ext in extensions:
-        files.extend(glob.glob(os.path.join(path, ext)))
-    for ext in extensions:
-        files.extend(glob.glob(os.path.join(path, "**", ext), recursive=True))
-    files = sorted(set(files))
-    return files
+    append = files.append
+    for root, _dirs, filenames in os.walk(abs_path):
+        for name in filenames:
+            if name.endswith(extensions):
+                append(os.path.join(root, name))
+
+    result = sorted(files)
+    _MODEL_SCAN_CACHE[abs_path] = (current_mtime, result)
+    return result
 
 
 class LauncherApp:
@@ -120,7 +211,7 @@ class LauncherApp:
         self.current_theme_mode = resolve_theme_mode(self.config)
 
         self.root.title("EZ-llama-launcher")
-        self.root.geometry("800x700")
+        self.root.geometry("900x820")
         self.root.resizable(True, False)
         self.root.place_window_center()
 
@@ -128,6 +219,24 @@ class LauncherApp:
         self.monitor_thread = None
         self.is_running = False
         self.url_opened = False
+        self.target_url = TARGET_URL
+        self.current_page = None
+
+        # 日志队列与批量刷新控制
+        self.log_queue = queue.Queue()
+        self._log_after_id = None
+        self._save_after_id = None
+
+        # 参数页面延迟构建标记
+        self._param_page_built = False
+
+        # 初始化参数字典
+        self.param_vars = {}
+        params_config = self.config.get("Params", {})
+        for group_name, params in PARAM_GROUPS:
+            for key, flag, desc in params:
+                var = ttk.StringVar(value=params_config.get(key, ""))
+                self.param_vars[key] = var
 
         self._build_ui()
         self._apply_theme(self.current_theme_mode, save=False)
@@ -135,33 +244,60 @@ class LauncherApp:
 
     def _build_ui(self):
         # 主容器
-        main_frame = ttk.Frame(self.root, padding=20)
+        main_frame = ttk.Frame(self.root, padding=10)
         main_frame.pack(fill=BOTH, expand=YES)
 
-        # === 标题 + 主题切换按钮 ===
-        title_frame = ttk.Frame(main_frame)
-        title_frame.pack(fill=X, pady=(0, 15))
-        title_frame.columnconfigure(0, weight=1)
+        # === 顶部固定区域：标题 ===
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill=X, pady=(0, 10))
 
-        left_frame = ttk.Frame(title_frame)
-        left_frame.grid(row=0, column=0, sticky=W)
+        # 标题
+        left_frame = ttk.Frame(header_frame)
+        left_frame.pack(side=LEFT, fill=Y)
 
         ttk.Label(
             left_frame,
             text="EZ-llama-launcher",
-            font=("Microsoft YaHei UI", 18, "bold"),
+            font=("Microsoft YaHei UI", 20, "bold"),
             bootstyle="primary"
         ).pack(anchor=W)
-        ttk.Label(
+        self.secondary_labels = []
+        subtitle = ttk.Label(
             left_frame,
             text="简易 Llama.cpp 模型启动器",
-            font=("Microsoft YaHei UI", 10),
+            font=("Microsoft YaHei UI", 11),
             bootstyle="secondary"
-        ).pack(anchor=W, pady=(2, 0))
+        )
+        subtitle.pack(anchor=W, pady=(2, 0))
+        self.secondary_labels.append(subtitle)
 
-        # 右上角主题切换按钮
-        right_frame = ttk.Frame(title_frame)
-        right_frame.grid(row=0, column=1, sticky=E)
+        ttk.Separator(main_frame, bootstyle="secondary").pack(fill=X, pady=(0, 10))
+
+        # === 页面切换按钮 + 右侧功能按钮 ===
+        nav_frame = ttk.Frame(main_frame)
+        nav_frame.pack(fill=X, pady=(0, 10))
+
+        self.nav_basic_btn = ttk.Button(
+            nav_frame,
+            text="基本设置",
+            command=lambda: self._show_page("basic"),
+            bootstyle="primary",
+            width=12
+        )
+        self.nav_basic_btn.pack(side=LEFT, padx=(0, 8))
+
+        self.nav_param_btn = ttk.Button(
+            nav_frame,
+            text="参数配置",
+            command=lambda: self._show_page("param"),
+            bootstyle="outline-secondary",
+            width=12
+        )
+        self.nav_param_btn.pack(side=LEFT)
+
+        # 右侧按钮（主题 + 启动/停止 + 打开服务）
+        right_frame = ttk.Frame(nav_frame)
+        right_frame.pack(side=RIGHT, fill=Y)
 
         self.theme_btn = ttk.Button(
             right_frame,
@@ -170,13 +306,68 @@ class LauncherApp:
             bootstyle="outline-secondary",
             width=10
         )
-        self.theme_btn.pack(anchor=E)
+        self.theme_btn.pack(side=LEFT, padx=(0, 8))
 
-        ttk.Separator(main_frame, bootstyle="secondary").pack(fill=X, pady=(0, 15))
+        self.action_btn = ttk.Button(
+            right_frame,
+            text="▶ 启动",
+            command=self._start_server,
+            bootstyle="success",
+            width=12
+        )
+        self.action_btn.pack(side=LEFT)
 
+        self.open_url_btn = ttk.Button(
+            right_frame,
+            text="🌐 打开服务",
+            command=self._open_browser,
+            bootstyle="info",
+            width=12,
+            state=DISABLED
+        )
+        self.open_url_btn.pack(side=RIGHT, padx=(8, 0))
+
+        # === 内容区域（可切换）===
+        self.content_frame = ttk.Frame(main_frame)
+        self.content_frame.pack(fill=BOTH, expand=YES)
+
+        # 基本设置页面
+        self.basic_page = ttk.Frame(self.content_frame, padding=5)
+        self._build_basic_page(self.basic_page)
+
+        # 参数配置页面（延迟构建）
+        self.param_page = ttk.Frame(self.content_frame, padding=5)
+
+        # 默认显示基本设置
+        self._show_page("basic")
+
+    def _show_page(self, page_name):
+        """切换显示基本设置或参数配置页面"""
+        if self.current_page == page_name:
+            return
+        self.current_page = page_name
+
+        self.basic_page.pack_forget()
+        self.param_page.pack_forget()
+
+        if page_name == "basic":
+            self.basic_page.pack(fill=BOTH, expand=YES)
+            self.nav_basic_btn.configure(bootstyle="primary")
+            self.nav_param_btn.configure(bootstyle="outline-secondary")
+        else:
+            # 延迟构建参数页面
+            if not self._param_page_built:
+                self._build_param_page(self.param_page)
+                self._param_page_built = True
+            self.param_page.pack(fill=BOTH, expand=YES)
+            self.nav_basic_btn.configure(bootstyle="outline-secondary")
+            self.nav_param_btn.configure(bootstyle="primary")
+
+    def _build_basic_page(self, parent):
+        """构建基本设置页面内容"""
         # === LlamaPath ===
-        ttk.Label(main_frame, text="llama.cpp 路径", font=("Microsoft YaHei UI", 10, "bold")).pack(anchor=W, pady=(0, 4))
-        llama_frame = ttk.Frame(main_frame)
+        ttk.Label(parent, text="llama.cpp 路径", font=("Microsoft YaHei UI", 10, "bold")).pack(anchor=W, pady=(0, 4))
+        llama_frame = ttk.Frame(parent)
         llama_frame.pack(fill=X, pady=(0, 12))
         llama_frame.columnconfigure(0, weight=1)
 
@@ -190,8 +381,8 @@ class LauncherApp:
         ).grid(row=0, column=1)
 
         # === ModelPath ===
-        ttk.Label(main_frame, text="模型文件夹路径", font=("Microsoft YaHei UI", 10, "bold")).pack(anchor=W, pady=(0, 4))
-        model_frame = ttk.Frame(main_frame)
+        ttk.Label(parent, text="模型文件夹路径", font=("Microsoft YaHei UI", 10, "bold")).pack(anchor=W, pady=(0, 4))
+        model_frame = ttk.Frame(parent)
         model_frame.pack(fill=X, pady=(0, 12))
         model_frame.columnconfigure(0, weight=1)
 
@@ -205,8 +396,8 @@ class LauncherApp:
         ).grid(row=0, column=1)
 
         # === 模型文件选择 ===
-        ttk.Label(main_frame, text="选择模型文件", font=("Microsoft YaHei UI", 10, "bold")).pack(anchor=W, pady=(8, 4))
-        combo_frame = ttk.Frame(main_frame)
+        ttk.Label(parent, text="选择模型文件", font=("Microsoft YaHei UI", 10, "bold")).pack(anchor=W, pady=(8, 4))
+        combo_frame = ttk.Frame(parent)
         combo_frame.pack(fill=X, pady=(0, 12))
         combo_frame.columnconfigure(0, weight=1)
 
@@ -218,28 +409,9 @@ class LauncherApp:
             bootstyle="outline-secondary", width=10
         ).grid(row=0, column=1)
 
-        # === 操作按钮 ===
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=X, pady=(10, 12))
-
-        self.start_btn = ttk.Button(
-            btn_frame, text="▶  启动 llama-server",
-            command=self._start_server,
-            bootstyle="success", width=20
-        )
-        self.start_btn.pack(side=LEFT, padx=(0, 10))
-
-        self.stop_btn = ttk.Button(
-            btn_frame, text="⏹  停止",
-            command=self._stop_server,
-            bootstyle="danger", width=12,
-            state=DISABLED
-        )
-        self.stop_btn.pack(side=LEFT)
-
         # === 状态栏 ===
-        status_frame = ttk.Frame(main_frame)
-        status_frame.pack(fill=X, pady=(0, 8))
+        status_frame = ttk.Frame(parent)
+        status_frame.pack(fill=X, pady=(10, 8))
 
         ttk.Label(status_frame, text="状态:", font=("Microsoft YaHei UI", 9, "bold")).pack(side=LEFT, padx=(0, 6))
         self.status_label = ttk.Label(
@@ -248,11 +420,12 @@ class LauncherApp:
             bootstyle="secondary"
         )
         self.status_label.pack(side=LEFT)
+        self.secondary_labels.append(self.status_label)
 
         # === 日志区域 ===
-        ttk.Label(main_frame, text="运行日志", font=("Microsoft YaHei UI", 10, "bold")).pack(anchor=W, pady=(0, 4))
+        ttk.Label(parent, text="运行日志", font=("Microsoft YaHei UI", 10, "bold")).pack(anchor=W, pady=(0, 4))
         self.log_text = ScrolledText(
-            main_frame, height=16, wrap=WORD, autohide=True,
+            parent, height=18, wrap=WORD, autohide=True,
             font=("Consolas", 10)
         )
         self.log_text.pack(fill=BOTH, expand=YES)
@@ -260,10 +433,127 @@ class LauncherApp:
         # 绑定路径变化事件
         self.model_dir_var.trace_add("write", lambda *args: self._on_model_dir_change())
 
+    def _build_param_page(self, parent):
+        """构建参数配置页面内容"""
+        # 提示标签
+        hint_lbl = ttk.Label(
+            parent,
+            text="提示：留空表示不启用该参数；对于开关型参数，输入任意值即可启用。",
+            font=("Microsoft YaHei UI", 10),
+            bootstyle="secondary"
+        )
+        hint_lbl.pack(anchor=W, pady=(0, 8))
+        self.secondary_labels.append(hint_lbl)
+
+        # Canvas + Scrollbar
+        canvas = tk.Canvas(parent, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scroll_frame = ttk.Frame(canvas, padding=5)
+
+        scroll_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas_window = canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+
+        def on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+        canvas.bind("<Configure>", on_canvas_configure)
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side=LEFT, fill=BOTH, expand=YES)
+        scrollbar.pack(side=RIGHT, fill=Y)
+
+        # 鼠标滚轮
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        self._build_param_ui(scroll_frame)
+
+    def _build_param_ui(self, parent):
+        """在滚动框架内构建参数输入控件"""
+        self.param_entries = {}
+        for group_name, params in PARAM_GROUPS:
+            group = ttk.Labelframe(parent, text=group_name, padding=10)
+            group.pack(fill=X, pady=(0, 14), padx=2)
+
+            for key, flag, desc in params:
+                row_container = ttk.Frame(group)
+                row_container.pack(fill=X, pady=(4, 8))
+
+                row = ttk.Frame(row_container)
+                row.pack(fill=X)
+                row.columnconfigure(1, weight=1)
+
+                label_text = f"{flag}"
+                lbl = ttk.Label(row, text=label_text, width=24, anchor=W, font=("Consolas", 11))
+                lbl.grid(row=0, column=0, sticky=NW)
+
+                var = self.param_vars[key]
+                entry = ttk.Entry(row, textvariable=var, bootstyle="primary", font=("Microsoft YaHei UI", 10))
+                entry.grid(row=0, column=1, sticky=EW, padx=(8, 0))
+
+                # 描述小字
+                desc_lbl = ttk.Label(
+                    row, text=desc,
+                    font=("Microsoft YaHei UI", 9),
+                    bootstyle="secondary",
+                    wraplength=600
+                )
+                desc_lbl.grid(row=1, column=1, sticky=EW, padx=(8, 0), pady=(2, 0))
+                self.secondary_labels.append(desc_lbl)
+
+                ToolTip(lbl, text=desc, bootstyle=("secondary", "inverse"))
+                ToolTip(entry, text=desc, bootstyle=("secondary", "inverse"))
+
+                self.param_entries[key] = entry
+                entry.bind("<FocusOut>", lambda e: self._save_params())
+
+    def _save_params(self):
+        """防抖保存：将所有非空参数保存到配置文件中"""
+        if getattr(self, '_save_after_id', None):
+            self.root.after_cancel(self._save_after_id)
+        self._save_after_id = self.root.after(200, self._do_save_params)
+
+    def _do_save_params(self):
+        """执行实际的参数保存，仅在参数发生变化时才写入文件"""
+        params = {}
+        for key, var in self.param_vars.items():
+            val = var.get().strip()
+            if val:
+                params[key] = val
+
+        old_params = self.config.get("Params", {})
+        if params == old_params:
+            return
+
+        self.config["Params"] = params
+        save_config(self.config)
+
+    def _update_action_btn(self):
+        """根据运行状态更新启动/停止按钮"""
+        if self.is_running:
+            self.action_btn.configure(
+                text="⏹ 停止",
+                bootstyle="danger",
+                command=self._stop_server
+            )
+        else:
+            self.action_btn.configure(
+                text="▶ 启动",
+                bootstyle="success",
+                command=self._start_server
+            )
+
     def _apply_theme(self, mode, save=True):
         """应用主题模式：'dark' 或 'light'"""
         if mode not in THEME_MAP:
             mode = "dark"
+        if mode == getattr(self, 'current_theme_mode', None):
+            return
 
         self.current_theme_mode = mode
         theme_name = THEME_MAP[mode]
@@ -274,6 +564,14 @@ class LauncherApp:
 
         # 更新日志区域颜色
         self.log_text.text.configure(bg=colors["bg"], fg=colors["fg"])
+
+        # 更新 secondary 标签颜色以提高暗色可见性
+        hint_color = "#e0e0e0" if mode == "dark" else "#6c757d"
+        for lbl in getattr(self, "secondary_labels", []):
+            try:
+                lbl.configure(foreground=hint_color)
+            except Exception:
+                pass
 
         # 更新按钮文字
         if mode == "dark":
@@ -292,11 +590,50 @@ class LauncherApp:
         self._apply_theme(new_mode, save=True)
 
     def _log(self, message):
-        """在日志区域追加消息"""
-        self.log_text.text.configure(state=NORMAL)
-        self.log_text.text.insert(END, message + "\n")
-        self.log_text.text.see(END)
-        self.log_text.text.configure(state=DISABLED)
+        """在日志区域追加消息（直接写入，用于单条非高频日志）"""
+        text = self.log_text.text
+        text.configure(state=NORMAL)
+        text.insert(END, message + "\n")
+        text.see(END)
+        text.configure(state=DISABLED)
+
+    def _schedule_log_flush(self):
+        """调度日志队列批量刷新"""
+        if self._log_after_id is not None:
+            return
+        self._log_after_id = self.root.after(100, self._flush_logs)
+
+    def _flush_logs(self):
+        """批量刷新日志队列到 GUI，减少主线程更新频率"""
+        self._log_after_id = None
+        lines = []
+        while True:
+            try:
+                lines.append(self.log_queue.get_nowait())
+            except queue.Empty:
+                break
+
+        if not lines:
+            if self.is_running:
+                self._schedule_log_flush()
+            return
+
+        text = self.log_text.text
+        text.configure(state=NORMAL)
+        text.insert(END, "\n".join(lines) + "\n")
+        text.see(END)
+        text.configure(state=DISABLED)
+
+        if not self.url_opened:
+            target = self.target_url
+            for line in lines:
+                if target in line:
+                    self.url_opened = True
+                    self._on_server_ready()
+                    break
+
+        if self.is_running or not self.log_queue.empty():
+            self._schedule_log_flush()
 
     def _set_status(self, text, style="secondary"):
         self.status_label.configure(text=text, bootstyle=style)
@@ -332,10 +669,11 @@ class LauncherApp:
         if files:
             display_names = []
             self.file_mapping = {}
+            abs_path_base = os.path.abspath(path) if path else ""
             for f in files:
                 abs_path = os.path.abspath(f)
-                if path and abs_path.startswith(os.path.abspath(path)):
-                    display = os.path.relpath(abs_path, path)
+                if abs_path_base and abs_path.startswith(abs_path_base):
+                    display = os.path.relpath(abs_path, abs_path_base)
                 else:
                     display = abs_path
                 display_names.append(display)
@@ -365,31 +703,49 @@ class LauncherApp:
         if not os.path.isdir(llama_path):
             messagebox.showerror("错误", f"llama.cpp 路径不存在: {llama_path}")
             return
-        if not model_display or model_display not in getattr(self, "file_mapping", {}):
-            messagebox.showerror("错误", "请先选择模型文件")
+
+        # 保存基本配置与参数
+        self.config["LlamaPath"] = llama_path
+        self.config["ModelPath"] = model_dir
+        self._save_params()
+
+        # 判断是否有模型或 Router 参数
+        model_override = self.param_vars["model"].get().strip()
+        models_dir = self.param_vars["models_dir"].get().strip()
+        models_preset = self.param_vars["models_preset"].get().strip()
+
+        file_mapping = getattr(self, "file_mapping", {})
+        has_model = bool(model_override)
+        if not has_model and model_display and model_display in file_mapping:
+            has_model = True
+
+        has_router = bool(models_dir) or bool(models_preset)
+
+        if not has_model and not has_router:
+            messagebox.showerror("错误", "请先选择模型文件，或在参数配置中填写模型路径/模型目录")
             return
 
-        model_path = self.file_mapping[model_display]
+        model_path = ""
+        if not model_override and model_display and model_display in file_mapping:
+            model_path = file_mapping[model_display]
 
-        if not os.path.exists(model_path):
+        if model_path and not os.path.exists(model_path):
             messagebox.showerror("错误", f"模型文件不存在: {model_path}")
             return
 
-        # 保存配置
-        self.config["LlamaPath"] = llama_path
-        self.config["ModelPath"] = model_dir
-        save_config(self.config)
+        # 计算实际目标 URL
+        host = self.param_vars["host"].get().strip() or "127.0.0.1"
+        port = self.param_vars["port"].get().strip() or "8080"
+        self.target_url = f"http://{host}:{port}"
 
         self._set_status("正在启动...", "warning")
-        self.start_btn.configure(state=DISABLED)
-        self.stop_btn.configure(state=NORMAL)
         self.is_running = True
+        self._update_action_btn()
         self.url_opened = False
 
         self._log("=" * 50)
         self._log("[系统] 启动 llama-server")
         self._log(f"[系统] 工作目录: {llama_path}")
-        self._log(f"[系统] 模型文件: {model_path}")
 
         # 自动检测可执行文件
         server_exe = None
@@ -408,9 +764,32 @@ class LauncherApp:
 
         self._log(f"[系统] 可执行文件: {server_exe}")
 
+        # 构建参数列表
+        args = [server_exe]
+
+        # 模型参数
+        if model_override:
+            args.extend(["-m", model_override])
+            self._log(f"[系统] 模型: {model_override}")
+        elif model_path:
+            args.extend(["-m", model_path])
+            self._log(f"[系统] 模型: {model_path}")
+
+        # 其他参数
+        for group_name, params in PARAM_GROUPS:
+            for key, flag, desc in params:
+                if key == "model":
+                    continue
+                value = self.param_vars[key].get().strip()
+                if value:
+                    args.append(flag)
+                    if key not in FLAG_PARAMS:
+                        args.append(value)
+                    self._log(f"[参数] {flag}" + (f" {value}" if key not in FLAG_PARAMS else ""))
+
         try:
             self.process = subprocess.Popen(
-                [server_exe, "-m", model_path],
+                args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -428,25 +807,19 @@ class LauncherApp:
 
         self.monitor_thread = threading.Thread(target=self._monitor_output, daemon=True)
         self.monitor_thread.start()
+        self._schedule_log_flush()
 
     def _monitor_output(self):
-        """在后台线程中监听 llama-server 输出"""
+        """在后台线程中监听 llama-server 输出（通过队列批量提交到 GUI）"""
         try:
             for line in self.process.stdout:
                 if line is None:
                     break
                 line = line.rstrip("\n\r")
-                if not line:
-                    continue
-
-                self.root.after(0, lambda l=line: self._log(l))
-
-                # 精确匹配目标 URL
-                if not self.url_opened and TARGET_URL in line:
-                    self.url_opened = True
-                    self.root.after(0, self._on_server_ready)
+                if line:
+                    self.log_queue.put(line)
         except Exception as e:
-            self.root.after(0, lambda e=e: self._log(f"[错误] 监听异常: {e}"))
+            self.log_queue.put(f"[错误] 监听异常: {e}")
         finally:
             return_code = None
             try:
@@ -455,15 +828,25 @@ class LauncherApp:
                 pass
             self.root.after(0, lambda rc=return_code: self._on_process_exit(rc))
 
+    def _open_browser(self):
+        """手动打开浏览器访问服务"""
+        if self.target_url:
+            try:
+                webbrowser.open(self.target_url)
+                self._log(f"[系统] 已打开浏览器: {self.target_url}")
+            except Exception as e:
+                self._log(f"[错误] 打开浏览器失败: {e}")
+        else:
+            self._log("[错误] 服务地址未设置")
+
     def _on_server_ready(self):
         """检测到服务就绪时的回调"""
-        self._log(f"[系统] 检测到服务地址: {TARGET_URL}")
+        self._log(f"[系统] 检测到服务地址: {self.target_url}")
         self._set_status("启动成功", "success")
         try:
-            webbrowser.open(TARGET_URL)
-            self._log("[系统] 已自动打开浏览器")
-        except Exception as e:
-            self._log(f"[错误] 打开浏览器失败: {e}")
+            self.open_url_btn.configure(state=NORMAL)
+        except Exception:
+            pass
 
     def _on_process_exit(self, return_code):
         """进程退出时的回调"""
@@ -494,11 +877,15 @@ class LauncherApp:
 
     def _reset_ui_state(self):
         self.is_running = False
-        self.start_btn.configure(state=NORMAL)
-        self.stop_btn.configure(state=DISABLED)
+        self._update_action_btn()
+        try:
+            self.open_url_btn.configure(state=DISABLED)
+        except Exception:
+            pass
 
     def on_close(self):
         """窗口关闭时清理"""
+        self._save_params()
         if self.process and self.process.poll() is None:
             try:
                 self.process.terminate()

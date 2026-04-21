@@ -1,5 +1,8 @@
 {
     "LlamaPath": "",
     "ModelPath": "",
-    "ThemeMode": "auto"
+    "ThemeMode": "auto",
+    "Params": {
+        "ngl": ""
+    }
 }
