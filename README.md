@@ -1,6 +1,7 @@
 # EZ-llama-launcher
 
-简单的 Llama.cpp 启动器，用于将启动命令封装成 GUI 简化操作。
+- 简单的 Llama.cpp 启动器，用于将启动命令封装成 GUI 简化操作。
+- 本项目基于ai生成
 
 ## 功能特性
 

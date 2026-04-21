@@ -36,6 +36,8 @@ ICON_PATH = get_resource_path("ico/logo.ico")
 DEFAULT_CONFIG = {
     "LlamaPath": "",
     "ModelPath": "",
+    "ModelFilePath": "",
+    "MmprojPath": "",
     "ThemeMode": "auto",
     "Params": {}
 }
@@ -138,11 +140,30 @@ def load_config():
     return DEFAULT_CONFIG.copy()
 
 
+_last_saved_json = None
+
+
 def save_config(config):
-    """保存配置文件"""
+    """保存配置文件（按固定键顺序输出，内容未变化时跳过实际写盘）"""
+    global _last_saved_json
     try:
+        key_order = [
+            "LlamaPath", "ModelPath", "ModelFilePath", "MmprojPath",
+            "ThemeMode", "Params"
+        ]
+        ordered = {}
+        for k in key_order:
+            if k in config:
+                ordered[k] = config[k]
+        for k, v in config.items():
+            if k not in ordered:
+                ordered[k] = v
+        payload = json.dumps(ordered, ensure_ascii=False, indent=4)
+        if payload == _last_saved_json:
+            return
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=4)
+            f.write(payload)
+        _last_saved_json = payload
     except Exception as e:
         messagebox.showerror("配置错误", f"保存配置文件失败: {e}")
 
@@ -409,6 +430,34 @@ class LauncherApp:
             bootstyle="outline-secondary", width=10
         ).grid(row=0, column=1)
 
+        # === 多模态投影层 ===
+        mmproj_label_frame = ttk.Frame(parent)
+        mmproj_label_frame.pack(anchor=W, pady=(8, 0))
+        ttk.Label(
+            mmproj_label_frame, text="多模态投影层",
+            font=("Microsoft YaHei UI", 10, "bold")
+        ).pack(side=LEFT)
+        mmproj_desc_lbl = ttk.Label(
+            mmproj_label_frame,
+            text="为例如Gemma4之类的模型提供多模态支持",
+            font=("Microsoft YaHei UI", 9),
+            bootstyle="secondary"
+        )
+        mmproj_desc_lbl.pack(side=LEFT, padx=(8, 0))
+        self.secondary_labels.append(mmproj_desc_lbl)
+
+        mmproj_combo_frame = ttk.Frame(parent)
+        mmproj_combo_frame.pack(fill=X, pady=(0, 12))
+        mmproj_combo_frame.columnconfigure(0, weight=1)
+
+        self.mmproj_combo = ttk.Combobox(mmproj_combo_frame, state="readonly", bootstyle="primary")
+        self.mmproj_combo.grid(row=0, column=0, sticky=EW, padx=(0, 8))
+
+        ttk.Button(
+            mmproj_combo_frame, text="刷新", command=self._refresh_model_list,
+            bootstyle="outline-secondary", width=10
+        ).grid(row=0, column=1)
+
         # === 状态栏 ===
         status_frame = ttk.Frame(parent)
         status_frame.pack(fill=X, pady=(10, 8))
@@ -432,6 +481,10 @@ class LauncherApp:
 
         # 绑定路径变化事件
         self.model_dir_var.trace_add("write", lambda *args: self._on_model_dir_change())
+
+        # 绑定下拉框选择事件，实现实时持久化
+        self.model_combo.bind("<<ComboboxSelected>>", lambda e: self._persist_combo_selection(self.model_combo, "ModelFilePath"))
+        self.mmproj_combo.bind("<<ComboboxSelected>>", lambda e: self._persist_combo_selection(self.mmproj_combo, "MmprojPath"))
 
     def _build_param_page(self, parent):
         """构建参数配置页面内容"""
@@ -661,6 +714,27 @@ class LauncherApp:
     def _delayed_refresh(self):
         self._refresh_model_list()
 
+    def _restore_combo(self, combo, config_key, display_names):
+        """根据配置恢复下拉框选中项，若找不到则默认选第一项"""
+        if not display_names:
+            combo.set("")
+            return
+        saved = self.config.get(config_key, "")
+        if saved:
+            mapping = getattr(self, "file_mapping", {})
+            for display, abs_path in mapping.items():
+                if abs_path == saved:
+                    combo.set(display)
+                    return
+        combo.current(0)
+
+    def _persist_combo_selection(self, combo, config_key):
+        """将下拉框当前选中项持久化到配置并保存"""
+        display = combo.get()
+        mapping = getattr(self, "file_mapping", {})
+        self.config[config_key] = mapping.get(display, "")
+        save_config(self.config)
+
     def _refresh_model_list(self):
         """刷新模型文件下拉列表"""
         path = self.model_dir_var.get().strip()
@@ -680,13 +754,20 @@ class LauncherApp:
                 self.file_mapping[display] = abs_path
 
             self.model_combo.configure(values=display_names)
-            if display_names:
-                self.model_combo.current(0)
+            self._restore_combo(self.model_combo, "ModelFilePath", display_names)
             self._log(f"[系统] 发现 {len(files)} 个模型文件")
         else:
             self.model_combo.configure(values=[])
             self.model_combo.set("")
             self._log("[系统] 未找到模型文件，请检查模型路径")
+
+        # 同步刷新多模态投影层下拉框
+        if files:
+            self.mmproj_combo.configure(values=display_names)
+            self._restore_combo(self.mmproj_combo, "MmprojPath", display_names)
+        else:
+            self.mmproj_combo.configure(values=[])
+            self.mmproj_combo.set("")
 
     def _start_server(self):
         if self.is_running:
@@ -707,6 +788,7 @@ class LauncherApp:
         # 保存基本配置与参数
         self.config["LlamaPath"] = llama_path
         self.config["ModelPath"] = model_dir
+        save_config(self.config)
         self._save_params()
 
         # 判断是否有模型或 Router 参数
@@ -733,10 +815,11 @@ class LauncherApp:
             messagebox.showerror("错误", f"模型文件不存在: {model_path}")
             return
 
-        # 计算实际目标 URL
+        # 计算实际目标 URL（浏览器固定使用 127.0.0.1）
         host = self.param_vars["host"].get().strip() or "127.0.0.1"
         port = self.param_vars["port"].get().strip() or "8080"
         self.target_url = f"http://{host}:{port}"
+        self.browser_url = f"http://127.0.0.1:{port}"
 
         self._set_status("正在启动...", "warning")
         self.is_running = True
@@ -774,6 +857,12 @@ class LauncherApp:
         elif model_path:
             args.extend(["-m", model_path])
             self._log(f"[系统] 模型: {model_path}")
+
+        # 多模态投影层参数
+        mmproj_path = self.config.get("MmprojPath", "")
+        if mmproj_path:
+            args.extend(["--mmproj", mmproj_path])
+            self._log(f"[系统] 多模态投影层: {mmproj_path}")
 
         # 其他参数
         for group_name, params in PARAM_GROUPS:
@@ -830,10 +919,11 @@ class LauncherApp:
 
     def _open_browser(self):
         """手动打开浏览器访问服务"""
-        if self.target_url:
+        url = getattr(self, "browser_url", None) or self.target_url
+        if url:
             try:
-                webbrowser.open(self.target_url)
-                self._log(f"[系统] 已打开浏览器: {self.target_url}")
+                webbrowser.open(url)
+                self._log(f"[系统] 已打开浏览器: {url}")
             except Exception as e:
                 self._log(f"[错误] 打开浏览器失败: {e}")
         else:
@@ -885,6 +975,8 @@ class LauncherApp:
 
     def on_close(self):
         """窗口关闭时清理"""
+        self._persist_combo_selection(self.model_combo, "ModelFilePath")
+        self._persist_combo_selection(self.mmproj_combo, "MmprojPath")
         self._save_params()
         if self.process and self.process.poll() is None:
             try:
