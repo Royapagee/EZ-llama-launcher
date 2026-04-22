@@ -1,0 +1,106 @@
+<Window
+    x:Class="EZLlamaLauncher.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="EZ-llama-launcher"
+    Width="960" Height="880"
+    MinWidth="700" MinHeight="600">
+
+    <Grid x:Name="RootGrid" Padding="16,12,16,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- 标题 -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,4">
+            <TextBlock Text="EZ-llama-launcher" FontSize="24" FontWeight="Bold" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+            <TextBlock Text="简易 Llama.cpp 模型启动器" FontSize="14" Opacity="0.8" Margin="0,2,0,0"/>
+        </StackPanel>
+        <Rectangle Grid.Row="1" Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12"/>
+
+        <!-- 导航 + 内容 -->
+        <Grid Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- 导航栏 -->
+            <Grid Grid.Row="0" Margin="0,0,0,12">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                    <Button x:Name="NavBasicBtn" Content="基本设置" Click="NavBasic_Click" Style="{StaticResource AccentButtonStyle}" Margin="0,0,8,0"/>
+                    <Button x:Name="NavParamBtn" Content="参数配置" Click="NavParam_Click" Style="{StaticResource DefaultButtonStyle}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button x:Name="ThemeBtn" Content="🌙 暗色" Click="ThemeBtn_Click" Margin="0,0,8,0"/>
+                    <Button x:Name="ActionBtn" Content="▶ 启动" Click="ActionBtn_Click" Margin="0,0,8,0"/>
+                    <Button x:Name="OpenUrlBtn" Content="🌐 打开服务" Click="OpenUrlBtn_Click" IsEnabled="False"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- 内容区域 -->
+            <Grid Grid.Row="1">
+                <!-- 基本设置 -->
+                <ScrollViewer x:Name="BasicScroll" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="0">
+                        <TextBlock Text="llama.cpp 路径" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                            <TextBox x:Name="LlamaPathBox" Grid.Column="0" Margin="0,0,8,0" PlaceholderText="选择 llama-server 所在目录"/>
+                            <Button Grid.Column="1" Content="浏览..." Click="BrowseLlama_Click" Width="80"/>
+                        </Grid>
+
+                        <TextBlock Text="模型文件夹路径" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                            <TextBox x:Name="ModelPathBox" Grid.Column="0" Margin="0,0,8,0" PlaceholderText="选择模型所在目录"/>
+                            <Button Grid.Column="1" Content="浏览..." Click="BrowseModel_Click" Width="80"/>
+                        </Grid>
+
+                        <TextBlock Text="选择模型文件" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                            <ComboBox x:Name="ModelCombo" Grid.Column="0" Margin="0,0,8,0" HorizontalAlignment="Stretch"/>
+                            <Button Grid.Column="1" Content="刷新" Click="RefreshModel_Click" Width="80"/>
+                        </Grid>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <TextBlock Text="多模态投影层" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock Text="为例如 Gemma4 之类的模型提供多模态支持" FontSize="12" Opacity="0.6" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                            <ComboBox x:Name="MmprojCombo" Grid.Column="0" Margin="0,0,8,0" HorizontalAlignment="Stretch"/>
+                            <Button Grid.Column="1" Content="刷新" Click="RefreshModel_Click" Width="80"/>
+                        </Grid>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="状态: " FontWeight="SemiBold"/>
+                            <TextBlock x:Name="StatusBlock" Text="就绪" Opacity="0.8"/>
+                        </StackPanel>
+
+                        <TextBlock Text="运行日志" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TextBox x:Name="LogBox"
+                            IsReadOnly="True"
+                            AcceptsReturn="True"
+                            TextWrapping="Wrap"
+                            FontFamily="Consolas"
+                            FontSize="13"
+                            ScrollViewer.VerticalScrollBarVisibility="Auto"
+                            MinHeight="220"
+                            BorderThickness="1"
+                            BorderBrush="{ThemeResource ControlElevationBorderBrush}"/>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- 参数配置 -->
+                <ScrollViewer x:Name="ParamScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="Collapsed">
+                    <StackPanel x:Name="ParamStack" Margin="0,0,8,0">
+                        <TextBlock Text="提示：留空表示不启用该参数；对于开关型参数，输入任意值即可启用。" FontSize="13" Opacity="0.7" Margin="0,0,0,12" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

@@ -16,16 +16,28 @@
 
 ```
 EZ-llama-launcher/
-├── main.py              # 主程序入口
+├── main.py              # 原版 Python 入口（保留参考）
+├── main.cpp             # WinUI 3 C++ 入口
+├── EZLlamaLauncher.vcxproj   # Visual Studio 项目文件
+├── packages.config      # NuGet 包配置
+├── App.xaml / App.cpp / App.h   # WinUI 3 应用框架
+├── MainWindow.xaml / MainWindow.cpp / MainWindow.h   # 主窗口与核心逻辑
+├── pch.h / pch.cpp      # 预编译头
+├── app.manifest         # 应用清单
 ├── config.json          # 配置文件（自动创建）
-├── requirements.txt     # Python 依赖
 ├── ico/
 │   └── logo.ico         # 图标
 ├── LICENSE
 └── README.md
 ```
 
-## 安装与运行
+## 构建与运行（WinUI 3 C++）
+
+### 环境要求
+
+- Windows 10 版本 19041 或更高 / Windows 11
+- Visual Studio 2022（含 "使用 C++ 的桌面开发" 和 "Windows 应用 SDK" 工作负载）
+- Windows App SDK 1.5+（通过 NuGet 自动还原）
 
 ### 1. 克隆仓库
 
@@ -34,21 +46,28 @@ git clone <仓库地址>
 cd EZ-llama-launcher
 ```
 
-### 2. 创建虚拟环境（推荐）
+### 2. 还原 NuGet 包
+
+在 Visual Studio 中打开 `EZLlamaLauncher.vcxproj`，右键项目 → **还原 NuGet 包**；
+或在 Developer Command Prompt 中执行：
+
+```bash
+msbuild -t:restore EZLlamaLauncher.vcxproj
+```
+
+### 3. 编译运行
+
+在 Visual Studio 中选择 **x64** → **Release**，按 **F5** 编译并运行。
+
+编译生成的可执行文件位于 `x64/Release/EZLamaLauncher.exe`（Unpackaged，可直接复制运行，附带 Windows App SDK 运行时）。
+
+## 原版 Python 运行方式（保留）
+
+如果你仍想使用 Python 版本：
 
 ```bash
 python -m venv .venv
-```
-
-### 3. 安装依赖
-
-```bash
 .venv\Scripts\pip install -r requirements.txt
-```
-
-### 4. 运行程序
-
-```bash
 .venv\Scripts\python main.py
 ```
 
@@ -57,12 +76,12 @@ python -m venv .venv
 1. 首次启动时，在界面上方设置 **llama.cpp 路径**（解压后的 llama.cpp 目录，包含 `llama-server.exe`）
 2. 设置 **模型文件夹路径**（存放 `.gguf` 模型文件的目录）
 3. 在下拉菜单中选择要加载的模型文件
-4. 点击 **▶ 启动 llama-server** 按钮
+4. 点击 **▶ 启动** 按钮
 5. 服务启动成功后，浏览器会自动打开 `http://127.0.0.1:8080`
 
 ## 配置文件
 
-程序会自动在工作目录下创建 `config.json`：
+程序会自动在 exe 所在目录下创建 `config.json`：
 
 ```json
 {
@@ -77,21 +96,6 @@ python -m venv .venv
 | `LlamaPath` | llama.cpp 程序所在目录 |
 | `ModelPath` | 模型文件存放目录 |
 | `ThemeMode` | 主题模式：`auto`（跟随系统）、`dark`（暗色）、`light`（亮色） |
-
-## 打包为可执行文件（可选）
-
-如果需要分发给没有 Python 环境的用户，可使用 PyInstaller 打包：
-
-```bash
-.venv\Scripts\pip install pyinstaller
-.venv\Scripts\pyinstaller -F -w -i ico/logo.ico main.py
-```
-
-打包后的可执行文件位于 `dist/main.exe`。
-
-另：作者自行编译了一份exe，可以前往`Releases`页面下载
-或[点击前往](https://github.com/Royapagee/EZ-llama-launcher/releases)
-
 
 ## 许可证
 

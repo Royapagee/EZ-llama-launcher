@@ -5,3 +5,13 @@
 /cpp/
 /EZ-llama-launcher.spec
 /.vscode/
+
+# WinUI 3 / MSBuild
+/x64/
+/Debug/
+/Release/
+/packages/
+*.user
+*.suo
+.vs/
+Generated Files/
