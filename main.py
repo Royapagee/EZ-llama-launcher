@@ -714,8 +714,8 @@ class LauncherApp:
     def _delayed_refresh(self):
         self._refresh_model_list()
 
-    def _restore_combo(self, combo, config_key, display_names):
-        """根据配置恢复下拉框选中项，若找不到则默认选第一项"""
+    def _restore_combo(self, combo, config_key, display_names, default_first=True):
+        """根据配置恢复下拉框选中项，若找不到则默认选第一项（或保持空/无）"""
         if not display_names:
             combo.set("")
             return
@@ -726,7 +726,13 @@ class LauncherApp:
                 if abs_path == saved:
                     combo.set(display)
                     return
-        combo.current(0)
+        if default_first:
+            combo.current(0)
+        else:
+            if "无" in display_names:
+                combo.set("无")
+            else:
+                combo.set("")
 
     def _persist_combo_selection(self, combo, config_key):
         """将下拉框当前选中项持久化到配置并保存"""
@@ -763,11 +769,12 @@ class LauncherApp:
 
         # 同步刷新多模态投影层下拉框
         if files:
-            self.mmproj_combo.configure(values=display_names)
-            self._restore_combo(self.mmproj_combo, "MmprojPath", display_names)
+            mmproj_values = ["无"] + display_names
+            self.mmproj_combo.configure(values=mmproj_values)
+            self._restore_combo(self.mmproj_combo, "MmprojPath", mmproj_values, default_first=False)
         else:
-            self.mmproj_combo.configure(values=[])
-            self.mmproj_combo.set("")
+            self.mmproj_combo.configure(values=["无"])
+            self.mmproj_combo.set("无")
 
     def _start_server(self):
         if self.is_running:
