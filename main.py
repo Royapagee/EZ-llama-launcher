@@ -233,7 +233,7 @@ class LauncherApp:
 
         self.root.title("EZ-llama-launcher")
         self.root.geometry("900x820")
-        self.root.resizable(True, False)
+        self.root.resizable(False, False)
         self.root.place_window_center()
 
         self.process = None

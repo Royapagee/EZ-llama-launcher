@@ -1,3 +1,8 @@
 {
-    
+    "LlamaPath": "",
+    "ModelPath": "",
+    "ModelFilePath": "",
+    "MmprojPath": "",
+    "ThemeMode": "auto",
+    "Params": {}
 }
